@@ -1,0 +1,389 @@
+{% extends "public.html" %} {% block page %}
+<div class="row q-col-gutter-md justify-center">
+  <div class="col-12 col-md-8 col-lg-6 q-gutter-y-md">
+    <q-card class="q-mt-lg no-shadow" bordered>
+      <q-card-section class="row">
+        <div class="text-h6 text-weight-bolder">Available Agents</div>
+        <q-space></q-space>
+        <q-btn
+          v-if="user_authenticated"
+          unlevated
+          label="Dashboard"
+          color="primary"
+          type="a"
+          href="/proxyllm/admin"
+        ></q-btn>
+      </q-card-section>
+      <q-separator></q-separator>
+      <q-list>
+        <q-expansion-item
+          v-for="agent in agents"
+          :key="agent.id"
+          group="agents"
+          header-class="q-py-md"
+          @show="resetFormDialog"
+        >
+          <template v-slot:header>
+            <q-item-section>
+              <q-item-label lines="1" v-text="agent.name"> </q-item-label>
+              <q-item-label
+                caption
+                lines="1"
+                v-text="agent.model_name"
+              ></q-item-label>
+              <q-item-label
+                caption
+                lines="2"
+                v-text="agent.description"
+              ></q-item-label>
+            </q-item-section>
+
+            <q-item-section top side>
+              <q-item-label
+                v-text="price(agent.price_per_unit, agent.unit_type)"
+              ></q-item-label>
+              <!-- <q-item-label v-text="agent.unit_type"></q-item-label> -->
+            </q-item-section>
+          </template>
+          <q-card flat style="border: none" class="q-pa-md">
+            <q-form @submit="generateInvoice(agent.id)" class="q-gutter-md">
+              <q-card-section>
+                <div class="text-h6"><span v-text="agent.name"></span></div>
+                <div class="text-subtitle2">
+                  <span v-text="agent.model_name"></span>
+                </div>
+              </q-card-section>
+              <q-card-section>
+                This agent has a cost of
+                <span
+                  class="text-weight-bold"
+                  v-text="`${agent.price_per_unit} sats`"
+                ></span>
+                per
+                <span
+                  class="text-weight-bold"
+                  v-text="agent.unit_type == 'token' ? '1000 tokens' : agent.unit_type"
+                ></span>
+              </q-card-section>
+              <q-card-section>
+                <template v-if="agent.unit_type === 'token'">
+                  <q-select
+                    filled
+                    dense
+                    v-model="formDialog.data.tokenPack"
+                    :options="tokenPacks"
+                    label="Select Token Pack"
+                    emit-value
+                    map-options
+                    @update:model-value="onTokenPackChange"
+                  ></q-select>
+
+                  <q-input
+                    v-if="formDialog.data.tokenPack === 0"
+                    filled
+                    dense
+                    v-model.number="formDialog.data.prepaid_units"
+                    type="number"
+                    label="Enter custom token amount"
+                    :min="100"
+                    :rules="[value => value > 0 || 'Must be greater than 0']"
+                    class="q-mt-sm"
+                  ></q-input>
+
+                  <div class="q-mt-md">
+                    <q-separator></q-separator>
+                    <div class="q-mt-sm">
+                      Total Cost:
+                      <span
+                        class="text-weight-bold"
+                        v-text="`${calculateCost(finalTokenAmount, agent.price_per_unit, agent.unit_type)} sats`"
+                      >
+                      </span>
+                    </div>
+                  </div>
+                </template>
+                <template v-else>
+                  <q-input
+                    filled
+                    dense
+                    v-model.trim="formDialog.data.prepaid_units"
+                    type="number"
+                    :label="`Buy units (${agent.unit_type}s)`"
+                    :min="1"
+                    :rules="[value => value > 0 || 'Must be greater than 0']"
+                    hint="Buy prepaid units for this agent"
+                  >
+                  </q-input>
+                  <div class="q-mt-md">
+                    <q-separator></q-separator>
+                    <div class="q-mt-sm">
+                      Total Cost:
+                      <span
+                        class="text-weight-bold"
+                        v-text="`${calculateCost(formDialog.data.prepaid_units, agent.price_per_unit, agent.unit_type)} sats`"
+                      ></span>
+                    </div>
+                  </div>
+                </template>
+              </q-card-section>
+              <q-card-actions align="right">
+                <q-btn
+                  unelevated
+                  color="primary"
+                  padding="sm lg"
+                  :disable="formDialog.data.prepaid_units == null || formDialog.data.prepaid_units <= 0"
+                  type="submit"
+                >
+                  Buy</q-btn
+                >
+              </q-card-actions>
+            </q-form>
+          </q-card>
+        </q-expansion-item>
+      </q-list>
+    </q-card>
+  </div>
+  <q-dialog v-model="receive.show" position="top" @hide="closeReceiveDialog">
+    <q-card
+      v-if="!receive.paymentReq"
+      class="q-pa-lg q-pt-xl lnbits__dialog-card"
+    >
+    </q-card>
+    <q-card v-else class="q-pa-lg q-pt-xl lnbits__dialog-card">
+      <div class="text-center q-mb-lg">
+        <a class="text-secondary" :href="`lightning:${receive.paymentReq}`">
+          <lnbits-qrcode
+            :value="`lightning:${receive.paymentReq.toUpperCase()}`"
+          ></lnbits-qrcode>
+        </a>
+      </div>
+      <div class="row q-mt-lg">
+        <q-btn outline color="grey" @click="copyText(receive.paymentReq)"
+          >Copy invoice</q-btn
+        >
+        <q-btn v-close-popup flat color="grey" class="q-ml-auto">Close</q-btn>
+      </div>
+    </q-card>
+  </q-dialog>
+  <q-dialog
+    v-model="accessKeyDialog.show"
+    persistent
+    @hide="accessKeyDialog.show = false"
+  >
+    <q-card class="q-pa-lg q-pt-xl lnbits__dialog-card">
+      <q-card-section class="row items-center q-pb-none">
+        <div class="text-h6">API Key</div>
+        <q-space />
+        <q-btn icon="close" flat round dense v-close-popup />
+      </q-card-section>
+
+      <q-card-section>
+        This is your API key. Please copy it and store it in a safe place.
+        <br />
+        <span class="text-weight-bold">It won't be shown again.</span>
+        <q-separator class="q-my-md"></q-separator>
+        <q-input
+          filled
+          dense
+          v-model="accessKeyDialog.data.api_key"
+          type="text"
+          label="API Key"
+          readonly
+        >
+          <template v-slot:after>
+            <q-btn
+              round
+              dense
+              flat
+              icon="content_copy"
+              @click="copyText(accessKeyDialog.data.api_key)"
+            >
+              <q-tooltip>Copy API Key</q-tooltip>
+            </q-btn>
+          </template>
+        </q-input>
+      </q-card-section>
+      <q-card-section>
+        <div class="row q-mt-lg">
+          <q-btn
+            outline
+            color="grey"
+            label="Details page"
+            type="a"
+            :href="`/proxyllm/accesskey/${accessKeyDialog.data.api_key}`"
+          ></q-btn>
+          <q-btn v-close-popup flat color="grey" class="q-ml-auto">Close</q-btn>
+        </div>
+      </q-card-section>
+      <!-- TODO: Top up more credits -->
+    </q-card>
+  </q-dialog>
+</div>
+{% endblock %} {% block scripts %}
+<script>
+  const agentsData = {{ agents | tojson }}
+  const is_user_authenticated = JSON.parse(
+    {{ is_user_authenticated | tojson }}
+  )
+
+  window.app = Vue.createApp({
+    el: '#vue',
+    mixins: [windowMixin],
+    data() {
+      return {
+        agents: [],
+        formDialog: {
+          data: {
+            prepaid_units: 1,
+            tokenPack: 10000
+          }
+        },
+        receive: {
+          show: false,
+          paymentReq: null,
+          paymentChecker: null
+        },
+        accessKeyDialog: {
+          show: false,
+          data: null
+        },
+        tokenPacks: [
+          {label: 'Starter – 5,000 tokens', value: 5000},
+          {label: 'Regular – 10,000 tokens', value: 10000},
+          {label: 'Power – 50,000 tokens', value: 50000},
+          {label: 'Mega – 100,000 tokens', value: 100000},
+          {label: 'Custom amount', value: 0}
+        ]
+      }
+    },
+    computed: {
+      finalTokenAmount() {
+        return this.formDialog.data.tokenPack === 0
+          ? this.formDialog.data.prepaid_units || 0
+          : this.formDialog.data.tokenPack
+      }
+    },
+    methods: {
+      resetFormDialog() {
+        this.formDialog.data = {
+          prepaid_units: 1,
+          tokenPack: 10000
+        }
+      },
+      price(price_per_unit, unit_type) {
+        if (unit_type === 'token') {
+          return `${price_per_unit} sats per 1000 tokens`
+        } else if (unit_type === 'request') {
+          return `${price_per_unit} sats per request`
+        } else {
+          return `${price_per_unit} sats per ${unit_type}`
+        }
+      },
+      onTokenPackChange(value) {
+        if (value === 0) {
+          // this.formDialog.data.customTokenAmount = null
+          this.formDialog.data.prepaid_units = 0
+        } else {
+          // this.formDialog.data.customTokenAmount = null
+          this.formDialog.data.prepaid_units = value
+        }
+      },
+      calculateCost(units, price_per_unit, unit_type = 'request') {
+        if (unit_type === 'token') {
+          return Math.ceil((units / 1000) * price_per_unit)
+        }
+        return Math.ceil(units * price_per_unit)
+      },
+      closeReceiveDialog() {
+        this.receive.show = false
+        this.receive.paymentReq = null
+        setTimeout(() => {
+          if (this.receive.paymentChecker) {
+            this.receive.paymentChecker.close()
+            this.receive.paymentChecker = null
+          }
+        }, 10000)
+      },
+      async generateInvoice(agentId) {
+        const agent = this.agents.find(agent => agent.id === agentId)
+        const units =
+          agent.unit_type === 'token'
+            ? this.calculateCost(
+                this.finalTokenAmount,
+                agent.price_per_unit,
+                agent.unit_type
+              ) / agent.price_per_unit
+            : this.formDialog.data.prepaid_units
+        if (units <= 0) {
+          Quasar.Notify.create({
+            type: 'negative',
+            message: 'Invalid amount'
+          })
+          return
+        }
+        console.log('Generating invoice for', agentId, units)
+        // Call your API to generate the invoice here
+        const {data} = await LNbits.api.request(
+          'POST',
+          `/proxyllm/api/v1/agents/${agentId}/invoice`,
+          null,
+          {
+            units: units,
+          }
+        )
+        this.receive.paymentReq = data.payment_request
+        this.receive.show = true
+        console.log(data)
+        this.waitForPayment(data.payment_hash, data.id)
+      },
+      async waitForPayment(paymentHash, keyId) {
+        try {
+          const url = new URL(window.location)
+          url.protocol = url.protocol === 'https:' ? 'wss' : 'ws'
+          url.pathname = `/api/v1/ws/${paymentHash}`
+          const ws = new WebSocket(url)
+          this.receive.paymentChecker = ws
+          ws.addEventListener('message', ({data}) => {
+            const payment = JSON.parse(data)
+            if (payment.pending === false) {
+              Quasar.Notify.create({
+                type: 'positive',
+                message: 'Invoice Paid!'
+              })
+              this.closeReceiveDialog()
+              this.showAccessKey(keyId)
+            }
+          })
+        } catch (err) {
+          console.warn(err)
+          LNbits.utils.notifyApiError(err)
+        }
+      },
+      async showAccessKey(keyId) {
+        Quasar.Loading.show()
+        try {
+          const {data} = await LNbits.api.request(
+            'GET',
+            `/proxyllm/api/v1/accesskeys/${keyId}`
+          )
+          if (data) {
+            this.accessKeyDialog.data = data
+            this.accessKeyDialog.show = true
+          }
+        } catch (err) {
+          console.warn(err)
+          LNbits.utils.notifyApiError(err)
+        } finally {
+          Quasar.Loading.hide()
+        }
+      }
+    },
+    created() {
+      this.agents = agentsData.map(agent => {
+        return JSON.parse(agent)
+      })
+      this.user_authenticated = is_user_authenticated
+    }
+  })
+</script>
+{% endblock %}

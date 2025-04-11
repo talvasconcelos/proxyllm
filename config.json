@@ -1,0 +1,13 @@
+{
+  "name": "LLM Proxy",
+  "short_description": "Extension building guide",
+  "tile": "/proxyllm/static/images/proxyllm.png",
+  "min_lnbits_version": "1.0.0",
+  "contributors": [
+    {
+      "name": "Tiago Vasconcelos",
+      "uri": "https://github.com/talvasconcelos",
+      "role": "Contributor"
+    }
+  ]
+}

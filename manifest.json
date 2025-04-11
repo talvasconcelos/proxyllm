@@ -1,0 +1,9 @@
+{
+    "repos": [
+        {
+            "id": "proxyllm",
+            "organisation": "talvasconcelos",
+            "repository": "proxyllm"
+        }
+    ]
+}

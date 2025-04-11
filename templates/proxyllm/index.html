@@ -1,0 +1,198 @@
+{% extends "base.html" %} {% from "macros.jinja" import window_vars with context
+%} {% block page %}
+
+<q-dialog v-model="formDialog.show" position="top">
+  <q-card class="q-pa-lg q-pt-xl lnbits__dialog-card">
+    <q-form @submit="sendForm" class="q-gutter-md">
+      <q-input
+        filled
+        dense
+        v-model.trim="formDialog.data.name"
+        type="text"
+        label="Llama 4"
+      ></q-input>
+      <q-input
+        filled
+        dense
+        v-model.trim="formDialog.data.api_url"
+        type="text"
+        label="API URL"
+      ></q-input>
+      <q-input
+        filled
+        dense
+        v-model.trim="formDialog.data.api_key"
+        type="text"
+        label="API Key *Optional"
+        ><template v-slot:after>
+          <q-btn round dense flat icon="sync" @click="testConection()">
+            <q-tooltip>Test connection</q-tooltip>
+          </q-btn>
+        </template></q-input
+      >
+      <q-input
+        filled
+        dense
+        v-model.trim="formDialog.data.model_name"
+        type="text"
+        label="gpt-3.5-turbo"
+        hint="Use the model name from the API"
+      ></q-input>
+      <q-select
+        filled
+        dense
+        v-model="formDialog.data.unit_type"
+        :options="unitTypes"
+        label="Price model"
+        hint="Select the price model"
+        emit-value
+      ></q-select>
+      <q-input
+        filled
+        dense
+        v-model.number="formDialog.data.price_per_unit"
+        type="number"
+        hint="Cost per request in satoshis"
+      ></q-input>
+      <q-input
+        filled
+        dense
+        v-model.trim="formDialog.data.description"
+        type="textarea"
+        label="Describe the model"
+      ></q-input>
+      <q-select
+        filled
+        dense
+        emit-value
+        v-model="formDialog.data.wallet_id"
+        :options="g.user.walletOptions"
+        label="Wallet *"
+      ></q-select>
+      <div class="row q-mt-lg">
+        <q-btn
+          v-if="formDialog.data.id"
+          unelevated
+          color="primary"
+          type="submit"
+          >Update Agent</q-btn
+        >
+        <q-btn
+          v-else
+          unelevated
+          color="primary"
+          :disable="formDialog.data.wallet_id == null || formDialog.data.api_url == null || formDialog.data.name == null || formDialog.data.model_name == null || formDialog.data.price_per_unit == null"
+          type="submit"
+          >Create Agent</q-btn
+        >
+        <q-btn
+          v-close-popup
+          flat
+          color="grey"
+          class="q-ml-auto"
+          @click="resetFormDialog"
+          >Cancel</q-btn
+        >
+      </div>
+    </q-form>
+  </q-card>
+</q-dialog>
+
+<div class="row q-col-gutter-md">
+  <div class="col-12 col-md-8 col-lg-7 q-gutter-y-md">
+    <q-card>
+      <q-card-section>
+        <q-btn unelevated color="primary" @click="formDialog.show = true"
+          >New Agent</q-btn
+        >
+      </q-card-section>
+    </q-card>
+
+    <q-card>
+      <q-card-section>
+        <div class="row items-center no-wrap q-mb-md">
+          <div class="col">
+            <h5 class="text-subtitle1 q-my-none">Agents</h5>
+          </div>
+        </div>
+        <q-table
+          flat
+          :rows="agents"
+          row-key="id"
+          :columns="agentsTable.columns"
+          :pagination.sync="agentsTable.pagination"
+        >
+          <template v-slot:header="props">
+            <q-tr :props="props">
+              <q-th auto-width></q-th>
+              <q-th auto-width></q-th>
+              <q-th v-for="col in props.cols" :key="col.name" :props="props">
+                <span v-text="col.label"></span>
+              </q-th>
+              <q-th auto-width></q-th>
+            </q-tr>
+          </template>
+
+          <template v-slot:body="props">
+            <q-tr :props="props">
+              <q-td auto-width>
+                <q-btn
+                  unelevated
+                  dense
+                  size="sm"
+                  icon="edit"
+                  :color="($q.dark.isActive) ? 'grey-7' : 'grey-5'"
+                  @click="openUpdateForm(props.row.id)"
+                ></q-btn>
+              </q-td>
+              <q-td auto-width>
+                <q-btn
+                  unelevated
+                  dense
+                  size="sm"
+                  icon="sync"
+                  :color="($q.dark.isActive) ? 'grey-7' : 'grey-5'"
+                  @click="testConection(props.row.id)"
+                  ><q-tooltip>Test connection</q-tooltip></q-btn
+                >
+              </q-td>
+              <q-td v-for="col in props.cols" :key="col.name" :props="props">
+                <span v-text="col.value"></span>
+              </q-td>
+              <q-td auto-width>
+                <q-btn
+                  flat
+                  dense
+                  size="sm"
+                  @click="deleteAgent(props.row.id)"
+                  icon="cancel"
+                  color="pink"
+                ></q-btn>
+              </q-td>
+            </q-tr>
+          </template>
+        </q-table>
+      </q-card-section>
+    </q-card>
+    <q-card>
+      <q-card-section>
+        <div class="row items-center no-wrap q-mb-md">
+          <div class="col">
+            <h5 class="text-subtitle1 q-my-none">API Keys</h5>
+          </div>
+        </div>
+        <q-table
+          flat
+          :rows="apiKeys"
+          row-key="id"
+          :columns="apiKeysTable.columns"
+          :pagination.sync="apiKeysTable.pagination"
+        ></q-table>
+      </q-card-section>
+    </q-card>
+  </div>
+</div>
+{% endblock %} {% block scripts %} {{ window_vars(user) }}
+<script src="{{ url_for('proxyllm_static', path='js/index.js') }}"></script>
+
+{% endblock %}
